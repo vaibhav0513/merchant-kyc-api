@@ -85,7 +85,7 @@ kycRouter.post(
         });
         return true;
       });
-      void pending;
+      
 
       // 3. call the provider outside the transaction (it can be slow)
       let result;
