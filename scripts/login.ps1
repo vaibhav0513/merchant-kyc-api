@@ -18,3 +18,12 @@ $checker   = Login 'checker1@demo.test'
 $admin     = Login 'admin1@demo.test'
 
 Write-Host 'Logged in as merchant1, merchant2, maker, maker2, checker, admin'
+
+
+function Send-Callback($eventId, $providerRef, $outcome, $secret) {
+  $body = (@{ eventId = $eventId; providerRef = $providerRef; outcome = $outcome } | ConvertTo-Json -Compress)
+  $hmac = New-Object System.Security.Cryptography.HMACSHA256
+  $hmac.Key = [Text.Encoding]::UTF8.GetBytes($secret)
+  $sig = ($hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($body)) | ForEach-Object { $_.ToString('x2') }) -join ''
+  Invoke-RestMethod -Method Post http://localhost:3000/api/kyc/callback -ContentType 'application/json' -Headers @{ 'X-Signature' = $sig } -Body $body
+}
