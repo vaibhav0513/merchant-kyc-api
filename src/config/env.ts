@@ -13,4 +13,6 @@ export const config = {
   port: Number(process.env.PORT) || 3000,
   databaseUrl: required('DATABASE_URL'),
   jwtSecret: required('JWT_SECRET'),
+  panEncKey: required('PAN_ENC_KEY'),
+  panHashKey: required('PAN_HASH_KEY'),
 };

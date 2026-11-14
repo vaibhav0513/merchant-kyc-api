@@ -3,7 +3,7 @@ import { pool } from './db/pool';
 import { authRouter } from './modules/auth/auth.routes';
 import { authenticate, requireRole } from './middleware/auth';
 import { errorHandler } from './middleware/errors';
-
+import { logger } from './utils/logger';
 
 export const app = express();
 
