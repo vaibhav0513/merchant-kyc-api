@@ -15,4 +15,6 @@ export const config = {
   jwtSecret: required('JWT_SECRET'),
   panEncKey: required('PAN_ENC_KEY'),
   panHashKey: required('PAN_HASH_KEY'),
+    kycApiKey: required('KYC_PROVIDER_API_KEY'),
+  kycCallbackSecret: required('KYC_CALLBACK_SECRET'),
 };
