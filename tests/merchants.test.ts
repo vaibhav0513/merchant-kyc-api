@@ -258,17 +258,18 @@ describe("sensitive data redaction", () => {
   });
 });
 
-describe("audit log", () => {
-  it("records a CREATE event when an application is created", async () => {
+describe('audit log', () => {
+  it('cannot be modified', async () => {
+    await expect(pool.query("UPDATE audit_events SET reason = 'x'")).rejects.toThrow(/append-only/);
+  });
+
+  it('records a CREATE event when an application is created', async () => {
     const created = await createMerchant(merchant1, 9);
     const rows = await pool.query(
-      "SELECT action, from_status, to_status FROM audit_events WHERE merchant_id = $1",
-      [created.body.id],
+      'SELECT action, from_status, to_status FROM audit_events WHERE merchant_id = $1',
+      [created.body.id]
     );
-    expect(rows.rows[0]).toEqual({
-      action: "CREATE",
-      from_status: null,
-      to_status: "DRAFT",
-    });
+    expect(rows.rows[0]).toEqual({ action: 'CREATE', from_status: null, to_status: 'DRAFT' });
   });
 });
+

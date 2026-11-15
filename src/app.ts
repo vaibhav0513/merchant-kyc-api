@@ -6,6 +6,9 @@ import { logger } from './utils/logger';
 import { merchantRouter } from './modules/merchants/merchant.routes';
 import { kycRouter } from './modules/kyc/kyc.routes';
 import { callbackRouter } from './modules/kyc/callback.routes';
+import swaggerUi from 'swagger-ui-express';
+import { openapi } from '../docs/openapi';
+
 
 export const app = express();
 
@@ -24,6 +27,7 @@ app.get('/health', async (_req, res) => {
   }
 });
 
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapi));
 app.use('/api/auth', authRouter);
 app.use('/api/merchants', merchantRouter);
 
