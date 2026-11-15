@@ -45,6 +45,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | `PAN_HASH_KEY` | HMAC key for the PAN duplicate-check index. Must differ from `PAN_ENC_KEY` |
 | `KYC_PROVIDER_API_KEY` | Credential the mock provider adapter requires |
 | `KYC_CALLBACK_SECRET` | Shared secret for signing provider callbacks |
+| `RECONCILE_INTERVAL_SECONDS` | Optional. How often the reconciliation worker runs (default 60) |
 
 Use different values in `.env` and `.env.test`. Both files are git-ignored. Only `.env.example` is committed.
 
@@ -99,7 +100,7 @@ src/
   modules/
     auth/                  login
     merchants/             routes, zod schemas, state machine + audit helper
-    kyc/                   provider adapter, verify/status routes, signed callback
+    kyc/                   provider adapter, verify/status routes, signed callback, reconciliation worker
   utils/                   crypto (AES-GCM, HMAC), mask/redact, logger
   app.ts                   builds the Express app (used by tests)
   server.ts                starts listening
@@ -253,6 +254,7 @@ Every create, edit, submit, KYC step and review writes a row to `audit_events` (
 - **Duplicate callbacks:** `kyc_callbacks.event_id` is a primary key. The first callback is applied, and a repeat returns `duplicate: true` with no change. A callback for an already-resolved verification returns `ignored: true`. A late callback never changes an `APPROVED` or `REJECTED` application.
 - **Concurrency:** state changes run in transactions with `SELECT ... FOR UPDATE` on the merchant row, so two simultaneous approvals run one after the other and the second gets a 409. Duplicate callbacks queue on a lock on the verification row.
 - **Unique constraints** on the PAN hash catch duplicate applications at the database level, which is safe under concurrent requests (unlike check-then-insert).
+- **Reconciliation worker:** every minute, `reconcileOnce()` looks for verifications that are still `PENDING` or `UNKNOWN` after 5 minutes and asks the provider for the status, then applies the result under the same row locks as the callback. A timeout on the status check changes nothing, so a timeout alone never marks KYC verified. It also moves applications stuck in `VERIFYING` with no saved result to `REVIEW_REQUIRED` with `kyc_status = UNKNOWN`, with an audit entry, so approval stays blocked.
 
 ---
 
@@ -262,7 +264,7 @@ Every create, edit, submit, KYC step and review writes a row to `audit_events` (
 npm test
 ```
 
-Tests run against the separate `kyc_assessment_test` database and wipe it at the start. They run in band because they share that database. Result at the time of writing: **12 passed, 12 total**.
+Tests run against the separate `kyc_assessment_test` database and wipe it at the start. They run in band because they share that database. Result at the time of writing: **15 passed, 15 total**.
 
 | Required scenario | Test |
 |---|---|
@@ -273,6 +275,7 @@ Tests run against the separate `kyc_assessment_test` database and wipe it at the
 | Invalid status transitions | `invalid status transitions` |
 | Sensitive-data redaction | `sensitive data redaction` (masked response, ciphertext in DB, log redaction) |
 | Extra | `audit log` (cannot be modified, CREATE event recorded) |
+| Reconciliation | `reconciliation worker` (stale PENDING resolved, timeout never verifies, stuck VERIFYING moved to review) |
 
 ---
 
@@ -281,9 +284,9 @@ Tests run against the separate `kyc_assessment_test` database and wipe it at the
 I would rather list these than hide them.
 
 - **Auth is demo-level.** Tokens last 1 hour, with no refresh and no revocation, and the user is not re-checked in the database on each request. A deactivated user keeps access until the token expires.
-- **Audit protection is a trigger.** It stops `UPDATE` and `DELETE` from the app, but a database superuser can drop the trigger or `TRUNCATE` the table. A real system would add hash chaining or ship events to external write-once storage.
+- **Audit protection is a trigger.** It stops `UPDATE` and `DELETE` from the app, but a database superuser can drop the trigger or `TRUNCATE` the table. A real system would add hash chaining or ship events to external write-once storage. A hash chain over audit rows would make tampering detectable even by a superuser.
 - **Key rotation is not built.** The ciphertext has no key version prefix. Keys are env variables instead of a KMS.
-- **Failure between provider call and save.** The verify flow reserves the slot, calls the provider outside the transaction, then saves. If the save fails after the provider answered, the application stays in `VERIFYING`. A reconciliation worker that checks stale `VERIFYING` rows against the provider would fix this. I did not build it.
+- **Reconciliation is basic.** The worker runs every 60 seconds (`RECONCILE_INTERVAL_SECONDS`) with a fixed 5-minute staleness threshold. There is no per-item backoff, and the provider status check is a mock that always answers `SUCCESS`.
 - **Idempotency-key reuse** with a different body is not rejected. The stored result is returned.
 - **Application creation** writes its audit row in a separate query, not in the same transaction as the insert.
 - **After REQUEST_CHANGES** the application is `DRAFT` but still shows its old `kycStatus`. This is safe, because verification must run again before review and it resets the KYC status to `PENDING`.
@@ -293,7 +296,7 @@ I would rather list these than hide them.
 
 ### Not built (optional items)
 
-Docker Compose, a reviewer dashboard, and a retry/reconciliation worker. I focused on the mandatory flows and testing, as the brief suggested.
+Docker Compose and a reviewer dashboard. I focused on the mandatory flows and testing, as the brief suggested.
 
 ---
 

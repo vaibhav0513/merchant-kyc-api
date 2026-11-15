@@ -10,6 +10,8 @@ import {
   signedCallback,
   closePool,
 } from "./helpers";
+import { reconcileOnce } from '../src/modules/kyc/reconcile';
+
 
 let merchant1: string,
   merchant2: string,
@@ -255,6 +257,52 @@ describe("sensitive data redaction", () => {
     expect(out.password).toBe("[REDACTED]");
     expect(out.nested.token).toBe("[REDACTED]");
     expect(out.name).toBe("Shop");
+  });
+});
+
+describe('reconciliation worker', () => {
+  const longAgo = "now() - interval '1 hour'";
+
+  it('resolves a stale PENDING verification from the provider status', async () => {
+    const created = await createMerchant(merchant1, 10);
+    const id = created.body.id;
+    await request(app).post(`/api/merchants/${id}/submit`).set(auth(merchant1)).expect(200);
+    await request(app).post('/api/kyc/verify').set(auth(maker)).send({ merchantId: id, identityRef: 'ID-1002' });
+    await pool.query(`UPDATE kyc_verifications SET updated_at = ${longAgo} WHERE merchant_id = $1`, [id]);
+
+    await reconcileOnce({ olderThanMs: 30 * 60 * 1000, check: async () => 'SUCCESS' });
+
+    const m = await request(app).get(`/api/merchants/${id}`).set(auth(checker));
+    expect(m.body.status).toBe('REVIEW_REQUIRED');
+    expect(m.body.kycStatus).toBe('VERIFIED');
+  });
+
+  it('never verifies when the status check times out', async () => {
+    const created = await createMerchant(merchant1, 11);
+    const id = created.body.id;
+    await request(app).post(`/api/merchants/${id}/submit`).set(auth(merchant1)).expect(200);
+    await request(app).post('/api/kyc/verify').set(auth(maker)).send({ merchantId: id, identityRef: 'ID-1002' });
+    await pool.query(`UPDATE kyc_verifications SET updated_at = ${longAgo} WHERE merchant_id = $1`, [id]);
+
+    await reconcileOnce({ olderThanMs: 30 * 60 * 1000, check: async () => 'TIMEOUT' });
+
+    const m = await request(app).get(`/api/merchants/${id}`).set(auth(checker));
+    expect(m.body.status).toBe('VERIFYING');
+    expect(m.body.kycStatus).toBe('PENDING');
+  });
+
+  it('moves an application stuck in VERIFYING to review as UNKNOWN', async () => {
+    const created = await createMerchant(merchant1, 12);
+    const id = created.body.id;
+    await request(app).post(`/api/merchants/${id}/submit`).set(auth(merchant1)).expect(200);
+    // simulate "provider answered but the save failed": VERIFYING with no verification row
+    await pool.query(`UPDATE merchants SET status = 'VERIFYING', updated_at = ${longAgo} WHERE id = $1`, [id]);
+
+    await reconcileOnce({ olderThanMs: 30 * 60 * 1000, check: async () => 'TIMEOUT' });
+
+    const m = await request(app).get(`/api/merchants/${id}`).set(auth(checker));
+    expect(m.body.status).toBe('REVIEW_REQUIRED');
+    expect(m.body.kycStatus).toBe('UNKNOWN');
   });
 });
 
