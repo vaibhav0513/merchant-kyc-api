@@ -84,15 +84,12 @@ The password for all of them is `Demo@1234`.
 
 ## 2. Architecture
 
-
-
 The app is a layered Express service. Routes validate input (zod) and check roles, then call PostgreSQL directly through `pg`. There is no ORM, to keep the SQL visible.
 
 - **Auth layer:** `authenticate` verifies the JWT, and `requireRole` enforces roles on each route. Ownership checks happen inside the route handlers.
 - **Workflow layer:** `workflow.ts` holds the state machine and the audit writer. Every state change runs in one transaction with a row lock.
 - **KYC layer:** a provider adapter (mock) sits behind `/api/kyc/verify`. Provider results come back through a separate, signed callback route.
 - **Data layer:** PostgreSQL with migrations. Constraints (unique PAN hash, unique callback event id, status checks) are the last line of defence against duplicates and bad states.
-
 
 ```
 src/
@@ -104,14 +101,13 @@ src/
     merchants/             routes, zod schemas, state machine + audit helper
     kyc/                   provider adapter, verify/status routes, signed callback
   utils/                   crypto (AES-GCM, HMAC), mask/redact, logger
-  docs/openapi.ts          OpenAPI spec served at /api-docs
   app.ts                   builds the Express app (used by tests)
   server.ts                starts listening
 migrations/                001_init, 002_audit, 003_kyc, 004_callbacks
 seeds/seed.ts              demo users
 tests/                     Jest + Supertest
 scripts/                   login.ps1 (PowerShell helper), setup.sh (cURL helper)
-docs/examples.md           cURL walkthrough
+docs/                      examples.md (cURL walkthrough), openapi.ts (Swagger spec at /api-docs)
 ```
 
 ### Application states
@@ -240,8 +236,6 @@ Every create, edit, submit, KYC step and review writes a row to `audit_events` (
 - I verify the signature against the raw bytes before doing anything else, with `crypto.timingSafeEqual`. A bad signature gets 401.
 - The callback route is not behind JWT login (a provider has no user account). The signature is its authentication.
 
-
-
 ### Security assumptions
 
 - The server runs behind HTTPS in any real deployment. This demo uses plain HTTP on localhost.
@@ -268,7 +262,7 @@ Every create, edit, submit, KYC step and review writes a row to `audit_events` (
 npm test
 ```
 
-Tests run against the separate `kyc_assessment_test` database and wipe it at the start. They run in band because they share that database. Result at the time of writing: **12 passed, 12 total**
+Tests run against the separate `kyc_assessment_test` database and wipe it at the start. They run in band because they share that database. Result at the time of writing: **12 passed, 12 total**.
 
 | Required scenario | Test |
 |---|---|
@@ -295,7 +289,7 @@ I would rather list these than hide them.
 - **After REQUEST_CHANGES** the application is `DRAFT` but still shows its old `kycStatus`. This is safe, because verification must run again before review and it resets the KYC status to `PENDING`.
 - **No rate limiting** on login or the API.
 - **The mock provider** decides outcomes from the identity reference. Retry/backoff against a real provider is not implemented.
-- **Swagger spec is hand-written** in `src/docs/openapi.ts`, so it can drift from the code. With more time I would generate it from the zod schemas.
+- **Swagger spec is hand-written** in `docs/openapi.ts`, so it can drift from the code. With more time I would generate it from the zod schemas.
 
 ### Not built (optional items)
 
