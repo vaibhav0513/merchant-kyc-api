@@ -305,4 +305,5 @@ Docker Compose and a reviewer dashboard. I focused on the mandatory flows and te
 - Source, migrations (`migrations/`) and seed data (`seeds/seed.ts`): this repository
 - cURL examples: [`docs/examples.md`](docs/examples.md)
 - Tests: `npm test`
-- Walkthrough video: [add link here]
+- Walkthrough video: https://drive.google.com/file/d/1THadR6eUZ4AJj_9tRd02LSTpPtukPaWa/view?usp=sharing
+- Postman collection: [`docs/postman/Merchant-KYC.postman_collection.json`](docs/postman/Merchant-KYC.postman_collection.json). Import it, set `callbackSecret` to your `KYC_CALLBACK_SECRET`, and run the folders in order.
